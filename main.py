@@ -555,17 +555,74 @@ async def play_slot(message: types.Message):
         else:
             msg = f"🎰 Natija: {res_str}\n\n😢 Afsus, yutug'ingiz yo'q. Keyingi safar omad! 🍀"
 
+        # Qolgan urinishlar sonini hisoblash (decrease_attempt dan keyin)
+        remaining_attempts = attempts - 1 if user_id != ADMIN_ID else 999999
+        
         # Admin uchun cheksiz urinish ko'rsatish
         if user_id == ADMIN_ID:
             msg += f"\n\nQolgan urinishlar: ♾️ Cheksiz (Admin)"
         else:
-            msg += f"\n\nQolgan urinishlar: {get_attempts(user_id)}"
+            msg += f"\n\nQolgan urinishlar: {remaining_attempts}"
         msg += f"\n💰 Stars hisobingiz: {get_stars_balance(user_id)}"
 
         await message.answer(msg, reply_markup=create_game_keyboard())
     except Exception as e:
         print(f"play_slot xatoligi: {e}")
         await message.answer("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.")
+
+async def play_slot_callback(callback: types.CallbackQuery):
+    """Callback uchun slot o'yini - mavjud xabarni yangilaydi"""
+    try:
+        user_id = callback.from_user.id
+        
+        # Admin uchun cheksiz urinish
+        if user_id == ADMIN_ID:
+            attempts = 999999
+        else:
+            attempts = get_attempts(user_id)
+        
+        if attempts <= 0:
+            await callback.message.edit_text("❌ Sizda urinish qolmadi. Admin bilan bog'laning!")
+            return
+
+        result, prize = slot_generator(user_id)
+        decrease_attempt(user_id)
+        add_winnings(user_id, prize)
+
+        # Natija xabarini yaratish (stikerlar bilan)
+        res_str = " | ".join(result)
+        
+        # Yutuq xabarini yaratish
+        if prize > 0:
+            if prize >= 100:
+                msg = f"🎰 Natija: {res_str}\n\n🏆 JACKPOT! Siz {prize} Stars yutdingiz! 🎉"
+                add_achievement(user_id, "jackpot")
+            elif prize >= 50:
+                msg = f"🎰 Natija: {res_str}\n\n🎉 Katta yutuq! Siz {prize} Stars yutdingiz! ✨"
+                add_achievement(user_id, "big_winner")
+            elif prize >= 20:
+                msg = f"🎰 Natija: {res_str}\n\n🎊 Yaxshi! Siz {prize} Stars yutdingiz! 🎯"
+                add_achievement(user_id, "good_win")
+            else:
+                msg = f"🎰 Natija: {res_str}\n\n🎁 Tabriklaymiz! Siz {prize} Stars yutdingiz! 💎"
+        else:
+            msg = f"🎰 Natija: {res_str}\n\n😢 Afsus, yutug'ingiz yo'q. Keyingi safar omad! 🍀"
+
+        # Qolgan urinishlar sonini hisoblash (decrease_attempt dan keyin)
+        remaining_attempts = attempts - 1 if user_id != ADMIN_ID else 999999
+        
+        # Admin uchun cheksiz urinish ko'rsatish
+        if user_id == ADMIN_ID:
+            msg += f"\n\nQolgan urinishlar: ♾️ Cheksiz (Admin)"
+        else:
+            msg += f"\n\nQolgan urinishlar: {remaining_attempts}"
+        msg += f"\n💰 Stars hisobingiz: {get_stars_balance(user_id)}"
+
+        # Mavjud xabarni yangilash
+        await callback.message.edit_text(msg, reply_markup=create_game_keyboard())
+    except Exception as e:
+        print(f"play_slot_callback xatoligi: {e}")
+        await callback.message.edit_text("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.")
 
 @dp.message(Command("stats"))
 async def show_stats(message: types.Message):
@@ -737,7 +794,7 @@ async def show_achievements(message: types.Message):
 async def callback_play(callback: types.CallbackQuery):
     """O'ynash callback"""
     try:
-        await play_slot(callback.message)
+        await play_slot_callback(callback)
         await callback.answer()
     except Exception as e:
         print(f"callback_play xatoligi: {e}")
@@ -747,7 +804,7 @@ async def callback_play(callback: types.CallbackQuery):
 async def callback_play_again(callback: types.CallbackQuery):
     """Yana o'ynash callback"""
     try:
-        await play_slot(callback.message)
+        await play_slot_callback(callback)
         await callback.answer()
     except Exception as e:
         print(f"callback_play_again xatoligi: {e}")
