@@ -334,20 +334,20 @@ def slot_generator(user_id):
         payment_row = cursor.fetchone()
         total_purchased_attempts = payment_row[0] if payment_row[0] else 0
         
-        # 30% yutuq algoritmi - sotib olgan urinishlaridan faqat 30% yuta oladi
-        max_win_percentage = 0.30  # 30%
+        # 50% yutuq algoritmi - sotib olgan urinishlaridan 50% yuta oladi
+        max_win_percentage = 0.50  # 50%
         max_possible_win = total_purchased_attempts * max_win_percentage
         
-        # Slot belgilari va ularning ehtimolligi (yutuqni cheklash uchun)
+        # Slot belgilari va ularning ehtimolligi (yutuq ehtimolligini oshirish)
         symbols = {
-            "🍋": 0.35,  # 35% ehtimollik - yo'qotish
-            "🍊": 0.25,  # 25% ehtimollik - yo'qotish
+            "🍋": 0.25,  # 25% ehtimollik - yo'qotish
+            "🍊": 0.20,  # 20% ehtimollik - yo'qotish
             "🍇": 0.15,  # 15% ehtimollik - yo'qotish
-            "🍒": 0.10,  # 10% ehtimollik - kichik yutuq
-            "7️⃣": 0.08,  # 8% ehtimollik - o'rtacha yutuq
-            "💎": 0.05,  # 5% ehtimollik - yaxshi yutuq
-            "🔥": 0.015, # 1.5% ehtimollik - katta yutuq
-            "🎰": 0.005  # 0.5% ehtimollik - jackpot
+            "🍒": 0.15,  # 15% ehtimollik - kichik yutuq
+            "7️⃣": 0.12,  # 12% ehtimollik - o'rtacha yutuq
+            "💎": 0.08,  # 8% ehtimollik - yaxshi yutuq
+            "🔥": 0.03,  # 3% ehtimollik - katta yutuq
+            "🎰": 0.02   # 2% ehtimollik - jackpot
         }
         
         # 3 ta belgi tanlash
@@ -395,7 +395,7 @@ def slot_generator(user_id):
         # VIP ko'paytiruvchisini qo'llash
         prize = int(prize * vip_multiplier)
         
-        # Yakuniy tekshirish - 30% dan oshmasligi kerak
+        # Yakuniy tekshirish - 50% dan oshmasligi kerak
         final_max_win = max_possible_win * vip_multiplier
         prize = min(prize, final_max_win)
         
