@@ -362,7 +362,7 @@ def slot_generator(user_id):
                     result.append(symbol)
                     break
         
-        # Yutuq hisoblash (30% algoritmi asosida)
+        # Yutuq hisoblash (50% algoritmi asosida)
         prize = 0
         
         # Jackpot: 🎰🎰🎰 (eng kam ehtimollik)
@@ -380,9 +380,21 @@ def slot_generator(user_id):
         # Kichik yutuq: 7️⃣7️⃣
         elif result.count("7️⃣") >= 2:
             prize = min(20, max_possible_win)
+        # Qo'shimcha yutuqlar: 💎💎
+        elif result.count("💎") >= 2:
+            prize = min(15, max_possible_win)
+        # Qo'shimcha yutuqlar: 🔥
+        elif result.count("🔥") >= 1:
+            prize = min(12, max_possible_win)
+        # Qo'shimcha yutuqlar: 7️⃣
+        elif result.count("7️⃣") >= 1:
+            prize = min(8, max_possible_win)
+        # Qo'shimcha yutuqlar: 🍒
+        elif result.count("🍒") >= 2:
+            prize = min(5, max_possible_win)
         # Eng kichik yutuq: mevalar
         elif len(set(result)) == 3 and all(s in ["🍋", "🍊", "🍇", "🍒"] for s in result):
-            prize = min(10, max_possible_win)
+            prize = min(3, max_possible_win)
         
         # VIP daraja ko'paytiruvchisi
         vip_multiplier = VIP_LEVELS.get(vip_level, {}).get("bonus_multiplier", 1.0)
