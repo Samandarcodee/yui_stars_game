@@ -4,12 +4,12 @@ import asyncio
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, LabeledPrice, PreCheckoutQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.enums import ParseMode
 
 # === Sozlamalar ===
-API_TOKEN = "7630434422:AAGHtlX2PavWMr7zpPpzLV3Pit7MV-IEmY8"
+API_TOKEN = "8245319536:AAE9ofodgLDe38G44wRoiucsAjiADh5jdjI"
 ADMIN_ID = 786171158  # Admin ID
 CHANNEL_LINK = "https://t.me/SamandarKadirov"
 
@@ -284,9 +284,9 @@ def get_achievements(user_id):
         return []
 
 def get_stars_balance(user_id):
-    """Stars balansini olish"""
+    """Stars balansini olish - total_won dan olinadi"""
     try:
-        cursor.execute("SELECT stars_balance FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT total_won FROM users WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
         return row[0] if row else 0
     except Exception as e:
@@ -312,67 +312,98 @@ def log_admin_action(admin_id, action, target_user_id=None, details=None):
     except Exception as e:
         print(f"log_admin_action xatoligi: {e}")
 
-# === SLOT FUNKSIYASI (Mukammal algoritm) ===
+# === SLOT FUNKSIYASI (30% Yutuq algoritmi) ===
 def slot_generator(user_id):
-    """Slot o'yini natijasini yaratish"""
+    """Slot o'yini natijasini yaratish - 30% yutuq algoritmi"""
     try:
-        # VIP darajasini olish
-        cursor.execute("SELECT vip_level, daily_bonus_used FROM users WHERE user_id = ?", (user_id,))
+        # Foydalanuvchi ma'lumotlarini olish
+        cursor.execute("SELECT vip_level, daily_bonus_used, total_spent FROM users WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
         
-        if row:
-            vip_level = row[0] if row[0] else 1
-            daily_bonus_used = row[1] if row[1] else False
-        else:
+        if not row:
             vip_level = 1
             daily_bonus_used = False
-            
-        multiplier = VIP_LEVELS[vip_level]["bonus_multiplier"]
+            total_spent = 0
+        else:
+            vip_level = row[0] or 1
+            daily_bonus_used = row[1] or False
+            total_spent = row[2] or 0
         
-        # Belgilarni tanlash (mukammal algoritm)
-        symbol_list = []
-        for symbol, data in symbols.items():
-            symbol_list.extend([symbol] * data["weight"])
+        # Foydalanuvchining sotib olgan urinishlarini hisoblash
+        cursor.execute("SELECT SUM(amount) FROM transactions WHERE user_id = ? AND type LIKE '%payment%'", (user_id,))
+        payment_row = cursor.fetchone()
+        total_purchased_attempts = payment_row[0] if payment_row[0] else 0
         
-        result = [random.choice(symbol_list) for _ in range(3)]
+        # 30% yutuq algoritmi - sotib olgan urinishlaridan faqat 30% yuta oladi
+        max_win_percentage = 0.30  # 30%
+        max_possible_win = total_purchased_attempts * max_win_percentage
         
-        # Yutuqni hisoblash (mukammal algoritm)
+        # Slot belgilari va ularning ehtimolligi (yutuqni cheklash uchun)
+        symbols = {
+            "🍋": 0.35,  # 35% ehtimollik - yo'qotish
+            "🍊": 0.25,  # 25% ehtimollik - yo'qotish
+            "🍇": 0.15,  # 15% ehtimollik - yo'qotish
+            "🍒": 0.10,  # 10% ehtimollik - kichik yutuq
+            "7️⃣": 0.08,  # 8% ehtimollik - o'rtacha yutuq
+            "💎": 0.05,  # 5% ehtimollik - yaxshi yutuq
+            "🔥": 0.015, # 1.5% ehtimollik - katta yutuq
+            "🎰": 0.005  # 0.5% ehtimollik - jackpot
+        }
+        
+        # 3 ta belgi tanlash
+        result = []
+        for _ in range(3):
+            # Ehtimollik asosida belgi tanlash
+            rand = random.random()
+            cumulative = 0
+            for symbol, prob in symbols.items():
+                cumulative += prob
+                if rand <= cumulative:
+                    result.append(symbol)
+                    break
+        
+        # Yutuq hisoblash (30% algoritmi asosida)
         prize = 0
-        symbol_counts = {}
-        for symbol in result:
-            symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
         
-        # Yutuq qoidalari (mukammal)
-        if symbol_counts.get("🎰", 0) >= 2:
-            prize = 50
-        elif symbol_counts.get("77", 0) == 3:
-            prize = 100
-        elif symbol_counts.get("💎", 0) == 3:
-            prize = 30
-        elif symbol_counts.get("🔥", 0) >= 2:
-            prize = 25
-        elif symbol_counts.get("77", 0) == 2:
-            prize = 20
-        elif symbol_counts.get("💎", 0) == 2:
-            prize = 10
-        elif symbol_counts.get("🍒", 0) == 3:
-            prize = 5
-        elif symbol_counts.get("⭐", 0) >= 2:
-            prize = 15
+        # Jackpot: 🎰🎰🎰 (eng kam ehtimollik)
+        if result == ["🎰", "🎰", "🎰"]:
+            prize = min(100, max_possible_win)
+        # Katta yutuq: 7️⃣7️⃣7️⃣
+        elif result == ["7️⃣", "7️⃣", "7️⃣"]:
+            prize = min(50, max_possible_win)
+        # Yaxshi yutuq: 💎💎💎
+        elif result == ["💎", "💎", "💎"]:
+            prize = min(30, max_possible_win)
+        # O'rtacha yutuq: 🔥🔥
+        elif result.count("🔥") >= 2:
+            prize = min(25, max_possible_win)
+        # Kichik yutuq: 7️⃣7️⃣
+        elif result.count("7️⃣") >= 2:
+            prize = min(20, max_possible_win)
+        # Eng kichik yutuq: mevalar
+        elif len(set(result)) == 3 and all(s in ["🍋", "🍊", "🍇", "🍒"] for s in result):
+            prize = min(10, max_possible_win)
         
-        # Kundalik bonus cheklovi
+        # VIP daraja ko'paytiruvchisi
+        vip_multiplier = VIP_LEVELS.get(vip_level, {}).get("bonus_multiplier", 1.0)
+        
+        # Kundalik bonus ishlatgan foydalanuvchilar uchun yutuq chegarasi
         if daily_bonus_used:
-            max_win = VIP_LEVELS[vip_level]["max_daily_win"]
-            if prize > max_win:
-                prize = max_win
+            max_win = 10  # Kundalik bonus ishlatganlar uchun max 10 Stars
+            prize = min(prize, max_win)
         
-        # VIP ko'paytiruvchi
-        prize = int(prize * multiplier)
+        # VIP ko'paytiruvchisini qo'llash
+        prize = int(prize * vip_multiplier)
+        
+        # Yakuniy tekshirish - 30% dan oshmasligi kerak
+        final_max_win = max_possible_win * vip_multiplier
+        prize = min(prize, final_max_win)
         
         return result, prize
+        
     except Exception as e:
         print(f"slot_generator xatoligi: {e}")
-        return ["🍒", "🍒", "🍒"], 0
+        return ["🍋", "🍊", "🍇"], 0
 
 # === KEYBOARD YARATISH ===
 def create_main_keyboard():
@@ -393,10 +424,16 @@ def create_main_keyboard():
         InlineKeyboardButton(text="🏅 Yutuqlar", callback_data="achievements")
     )
     
-    # Uchinchi qator - 2 ta tugma
+    # Uchinchi qator - 3 ta tugma
     builder.row(
         InlineKeyboardButton(text="💰 Stars hisobim", callback_data="stars_balance"),
-        InlineKeyboardButton(text="🎯 O'yin qoidalari", callback_data="rules")
+        InlineKeyboardButton(text="🎯 O'yin qoidalari", callback_data="rules"),
+        InlineKeyboardButton(text="🛒 Urinish sotib olish", callback_data="buy_attempts")
+    )
+    
+    # To'rtinchi qator - 1 ta tugma
+    builder.row(
+        InlineKeyboardButton(text="💸 Stars chiqarib olish", callback_data="withdraw_stars")
     )
     
     return builder.as_markup()
@@ -466,26 +503,50 @@ async def start_game(message: types.Message):
             return
         
         welcome_text = f"""
-🎰 Salom {user.first_name}!
+🎰 *Slot O'yiniga Xush Kelibsiz!*
 
-🎮 Slot o'yiniga xush kelibsiz!
-🎁 Har kuni 5 ta bepul urinish oling
-🏆 VIP darajangizni oshiring
-💰 Stars yutib hisobingizga qo'shiling
+👋 Salom {user.first_name}!
 
-📋 Buyruqlar:
-/play — o'ynash
-/stats — statistika
-/top — reyting
-/vip — VIP ma'lumot
-/achievements — yutuqlar
-/balance — Stars hisobim
-/rules — o'yin qoidalari
+🎮 *O'yin Xususiyatlari:*
+• 🎰 Slot o'yini - stikerlar bilan
+• 🎁 Kundalik 5 bepul urinish
+• 💎 Stars yutib hisobga qo'shish
+• 🏆 VIP daraja tizimi
+• 🏅 Yutuqlar va reyting
+• 💸 Stars chiqarib olish
+
+💰 *To'lov Paketlari:*
+• 25 Stars = 25 urinish
+• 35 Stars = 35 urinish
+• 55 Stars = 55 urinish
+• 100 Stars = 100 urinish + 10% bonus
+• 200 Stars = 200 urinish + 20% bonus
+• 500 Stars = 500 urinish + 20% bonus
+
+🎯 *O'yin Qoidalari:*
+• 🎰🎰🎰 = 100 Stars (Jackpot!)
+• 7️⃣7️⃣7️⃣ = 50 Stars
+• 💎💎💎 = 30 Stars
+• 🔥🔥 = 25 Stars
+• 7️⃣7️⃣ = 20 Stars
+• Mevalar = 10 Stars
+
+📱 *Tugmalar orqali boshqaring:*
+Quyidagi tugmalardan foydalaning ⬇️
         """
         
         await message.answer(welcome_text, reply_markup=create_main_keyboard())
     except Exception as e:
         print(f"start_game xatoligi: {e}")
+        await message.answer("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.")
+
+@dp.message(Command("buy"))
+async def buy_attempts(message: types.Message):
+    """Urinish sotib olish buyrug'i"""
+    try:
+        await show_buy_attempts(message)
+    except Exception as e:
+        print(f"buy_attempts xatoligi: {e}")
         await message.answer("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.")
 
 @dp.message(Command("admin"))
@@ -563,7 +624,7 @@ async def play_slot(message: types.Message):
             msg += f"\n\nQolgan urinishlar: ♾️ Cheksiz (Admin)"
         else:
             msg += f"\n\nQolgan urinishlar: {remaining_attempts}"
-        msg += f"\n💰 Stars hisobingiz: {get_stars_balance(user_id)}"
+        msg += f"\n💎 Stars hisobingiz: {get_stars_balance(user_id)} Stars"
 
         await message.answer(msg, reply_markup=create_game_keyboard())
     except Exception as e:
@@ -616,13 +677,50 @@ async def play_slot_callback(callback: types.CallbackQuery):
             msg += f"\n\nQolgan urinishlar: ♾️ Cheksiz (Admin)"
         else:
             msg += f"\n\nQolgan urinishlar: {remaining_attempts}"
-        msg += f"\n💰 Stars hisobingiz: {get_stars_balance(user_id)}"
+        msg += f"\n💎 Stars hisobingiz: {get_stars_balance(user_id)} Stars"
 
         # Mavjud xabarni yangilash
         await callback.message.edit_text(msg, reply_markup=create_game_keyboard())
     except Exception as e:
         print(f"play_slot_callback xatoligi: {e}")
         await callback.message.edit_text("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.")
+
+async def show_buy_attempts(message: types.Message):
+    """Urinish sotib olish ma'lumotini ko'rsatish"""
+    try:
+        buy_text = f"""
+🛒 Urinish sotib olish
+
+💡 Telegram Stars orqali xavfsiz to'lov:
+
+📋 Paketlar:
+• 25 urinish = 25 Stars
+• 35 urinish = 35 Stars
+• 55 urinish = 55 Stars
+• 100 urinish = 100 Stars
+• 200 urinish = 200 Stars
+• 500 urinish = 500 Stars
+
+🎁 Bonus:
+• 100+ Stars = 10% bonus urinish
+• 200+ Stars = 20% bonus urinish
+
+💳 Xavfsiz to'lov Telegram Stars orqali
+🔒 Shaxsiy ma'lumotlar talab qilinmaydi
+        """
+        
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🛒 25 urinish (25 Stars)", callback_data="buy_25"))
+        builder.row(InlineKeyboardButton(text="🛒 35 urinish (35 Stars)", callback_data="buy_35"))
+        builder.row(InlineKeyboardButton(text="🛒 55 urinish (55 Stars)", callback_data="buy_55"))
+        builder.row(InlineKeyboardButton(text="🛒 100 urinish (100 Stars)", callback_data="buy_100"))
+        builder.row(InlineKeyboardButton(text="🛒 200 urinish (200 Stars)", callback_data="buy_200"))
+        builder.row(InlineKeyboardButton(text="🛒 500 urinish (500 Stars)", callback_data="buy_500"))
+        builder.row(InlineKeyboardButton(text="🏠 Bosh sahifa", callback_data="main_menu"))
+        
+        await message.answer(buy_text, reply_markup=builder.as_markup())
+    except Exception as e:
+        print(f"show_buy_attempts xatoligi: {e}")
 
 @dp.message(Command("stats"))
 async def show_stats(message: types.Message):
@@ -669,11 +767,58 @@ async def show_balance(message: types.Message):
 • Yutgan Stars hisobingizda saqlanadi
 • Stars orqali boshqa o'yinlarda foydalanishingiz mumkin
 • Har kuni kundalik bonus olishingiz mumkin
+• To'lov qilingan Stars ham hisobda ko'rsatiladi
         """
         
         await message.answer(balance_text, reply_markup=create_main_keyboard())
     except Exception as e:
         print(f"show_balance xatoligi: {e}")
+
+async def show_withdraw_stars(message: types.Message):
+    """Stars chiqarib olish sahifasini ko'rsatish"""
+    try:
+        user_id = message.from_user.id
+        balance = get_stars_balance(user_id)
+        
+        withdraw_text = f"""
+💸 Stars chiqarib olish
+
+💎 Jami Stars: {balance} Stars
+
+📋 Chiqarib olish shartlari:
+• Minimal: 50 Stars
+• Maksimal: 500 Stars
+• Admin tasdiqlaydi
+• 24 soat ichida yuboriladi
+
+💡 Ma'lumot:
+• Faqat yutgan Stars chiqarib olinadi
+• To'lov qilingan Stars chiqarib olinmaydi
+• Har bir so'rov alohida ko'rib chiqiladi
+        """
+        
+        builder = InlineKeyboardBuilder()
+        
+        # Chiqarib olish miqdorlari
+        if balance >= 50:
+            builder.row(InlineKeyboardButton(text="💸 50 Stars", callback_data="withdraw_50"))
+        if balance >= 100:
+            builder.row(InlineKeyboardButton(text="💸 100 Stars", callback_data="withdraw_100"))
+        if balance >= 200:
+            builder.row(InlineKeyboardButton(text="💸 200 Stars", callback_data="withdraw_200"))
+        if balance >= 300:
+            builder.row(InlineKeyboardButton(text="💸 300 Stars", callback_data="withdraw_300"))
+        if balance >= 400:
+            builder.row(InlineKeyboardButton(text="💸 400 Stars", callback_data="withdraw_400"))
+        if balance >= 500:
+            builder.row(InlineKeyboardButton(text="💸 500 Stars", callback_data="withdraw_500"))
+        
+        builder.row(InlineKeyboardButton(text="🏠 Bosh sahifa", callback_data="main_menu"))
+        
+        await message.answer(withdraw_text, reply_markup=builder.as_markup())
+    except Exception as e:
+        print(f"show_withdraw_stars xatoligi: {e}")
+        await message.answer("❌ Xatolik yuz berdi")
 
 @dp.message(Command("rules"))
 async def show_rules(message: types.Message):
@@ -907,7 +1052,316 @@ async def callback_rules(callback: types.CallbackQuery):
         print(f"callback_rules xatoligi: {e}")
         await callback.answer("❌ Xatolik yuz berdi")
 
-# === ADMIN CALLBACK HANDLERLAR ===
+@dp.callback_query(F.data == "buy_attempts")
+async def callback_buy_attempts(callback: types.CallbackQuery):
+    """Urinish sotib olish callback"""
+    try:
+        await show_buy_attempts(callback.message)
+        await callback.answer()
+    except Exception as e:
+        print(f"callback_buy_attempts xatoligi: {e}")
+        await callback.answer("❌ Xatolik yuz berdi")
+
+@dp.callback_query(F.data == "withdraw_stars")
+async def callback_withdraw_stars(callback: types.CallbackQuery):
+    """Stars chiqarib olish callback"""
+    try:
+        await show_withdraw_stars(callback.message)
+        await callback.answer()
+    except Exception as e:
+        print(f"callback_withdraw_stars xatoligi: {e}")
+        await callback.answer("❌ Xatolik yuz berdi")
+
+@dp.callback_query(F.data.startswith("buy_"))
+async def callback_buy_package(callback: types.CallbackQuery):
+    """To'lov paketini tanlash"""
+    try:
+        package = callback.data.split("_")[1]
+        packages = {
+            "25": {"attempts": 25, "price": 25, "title": "25 urinish"},
+            "35": {"attempts": 35, "price": 35, "title": "35 urinish"},
+            "55": {"attempts": 55, "price": 55, "title": "55 urinish"},
+            "100": {"attempts": 100, "price": 100, "title": "100 urinish"},
+            "200": {"attempts": 200, "price": 200, "title": "200 urinish"},
+            "500": {"attempts": 500, "price": 500, "title": "500 urinish"}
+        }
+        
+        if package not in packages:
+            await callback.answer("❌ Noto'g'ri paket!")
+            return
+        
+        pkg = packages[package]
+        
+        # Bonus hisoblash
+        bonus = 0
+        if pkg["price"] >= 200:
+            bonus = int(pkg["attempts"] * 0.2)  # 20% bonus
+        elif pkg["price"] >= 100:
+            bonus = int(pkg["attempts"] * 0.1)  # 10% bonus
+        
+        total_attempts = pkg["attempts"] + bonus
+        
+        # Telegram Stars invoice yaratish
+        prices = [LabeledPrice(label=pkg["title"], amount=pkg["price"])]  # Stars directly
+        
+        # Telegram Stars to'lovini kanalga yuborish
+        await bot.send_invoice(
+            chat_id=callback.from_user.id,
+            title=f"🎰 {pkg['title']} paketi",
+            description=f"Slot o'yini uchun {pkg['attempts']} urinish" + (f" + {bonus} bonus" if bonus > 0 else ""),
+            payload=f"attempts_{package}_{callback.from_user.id}",
+            provider_token="",  # Digital goods uchun bo'sh
+            currency="XTR",  # Telegram Stars
+            prices=prices,
+            start_parameter=f"attempts_{package}",
+            need_name=False,
+            need_phone_number=False,
+            need_email=False,
+            need_shipping_address=False,
+            send_phone_number_to_provider=False,
+            send_email_to_provider=False,
+            is_flexible=False
+        )
+        
+        await callback.answer()
+        
+    except Exception as e:
+        print(f"callback_buy_package xatoligi: {e}")
+        await callback.answer("❌ Xatolik yuz berdi")
+
+# === WITHDRAW STARS HANDLERS ===
+@dp.callback_query(F.data.startswith("withdraw_"))
+async def callback_withdraw_amount(callback: types.CallbackQuery):
+    """Stars chiqarib olish miqdori"""
+    try:
+        amount = int(callback.data.split("_")[1])
+        user_id = callback.from_user.id
+        balance = get_stars_balance(user_id)
+        
+        # Tekshirishlar
+        if amount < 50 or amount > 500:
+            await callback.answer("❌ Noto'g'ri miqdor! (50-500 Stars)")
+            return
+        
+        if balance < amount:
+            await callback.answer("❌ Hisobingizda yetarli Stars yo'q!")
+            return
+        
+        # Admin ga xabar yuborish
+        admin_text = f"""
+💸 Yangi Stars chiqarib olish so'rovi!
+
+👤 Foydalanuvchi: {callback.from_user.first_name} (@{callback.from_user.username or 'username yo\'q'})
+🆔 User ID: {user_id}
+💎 So'ralgan miqdor: {amount} Stars
+💎 Jami balans: {balance} Stars
+
+⏰ Vaqt: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
+        """
+        
+        await bot.send_message(
+            chat_id=ADMIN_ID,
+            text=admin_text,
+            reply_markup=InlineKeyboardBuilder().row(
+                InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"confirm_withdraw_{user_id}_{amount}"),
+                InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_withdraw_{user_id}_{amount}")
+            ).as_markup()
+        )
+        
+        # Foydalanuvchiga xabar
+        await callback.message.edit_text(
+            f"✅ Chiqarib olish so'rovi yuborildi!\n\n💎 Miqdor: {amount} Stars\n📢 Admin tasdiqlashini kuting...",
+            reply_markup=InlineKeyboardBuilder().row(
+                InlineKeyboardButton(text="🏠 Bosh sahifa", callback_data="main_menu")
+            ).as_markup()
+        )
+        
+        await callback.answer("✅ So'rov yuborildi!")
+        
+    except Exception as e:
+        print(f"callback_withdraw_amount xatoligi: {e}")
+        await callback.answer("❌ Xatolik yuz berdi")
+
+# === ADMIN WITHDRAW CONFIRMATION HANDLERS ===
+@dp.callback_query(F.data.startswith("confirm_withdraw_"))
+async def confirm_withdraw(callback: types.CallbackQuery):
+    """Stars chiqarib olishni tasdiqlash"""
+    try:
+        if callback.from_user.id != ADMIN_ID:
+            await callback.answer("❌ Sizda ruxsat yo'q!")
+            return
+        
+        # Payload ni parse qilish: confirm_withdraw_user_id_amount
+        parts = callback.data.split("_")
+        user_id = int(parts[2])
+        amount = int(parts[3])
+        
+        # Balansni tekshirish
+        balance = get_stars_balance(user_id)
+        if balance < amount:
+            await callback.message.edit_text(
+                f"❌ Foydalanuvchining balansi yetarli emas!\n\n👤 User ID: {user_id}\n💎 So'ralgan: {amount} Stars\n💎 Mavjud: {balance} Stars"
+            )
+            await callback.answer("❌ Balans yetarli emas!")
+            return
+        
+        # Stars ni chiqarib olish
+        cursor.execute("UPDATE users SET stars_balance = stars_balance - ? WHERE user_id = ?", (amount, user_id))
+        conn.commit()
+        
+        # Log qilish
+        log_admin_action(ADMIN_ID, "withdraw_confirmed", user_id, f"Withdrew {amount} Stars")
+        
+        # Foydalanuvchiga xabar
+        success_msg = f"""
+✅ Stars chiqarib olish tasdiqlandi!
+
+💎 Chiqarib olingan: {amount} Stars
+💎 Qolgan balans: {balance - amount} Stars
+
+📢 Stars 24 soat ichida yuboriladi!
+        """
+        
+        await bot.send_message(user_id, success_msg, reply_markup=create_main_keyboard())
+        
+        # Admin xabarini yangilash
+        await callback.message.edit_text(
+            f"✅ Stars chiqarib olish tasdiqlandi!\n\n👤 Foydalanuvchi: {user_id}\n💎 Miqdor: {amount} Stars\n📊 Qolgan: {balance - amount} Stars"
+        )
+        
+        await callback.answer("✅ Tasdiqlandi!")
+        
+    except Exception as e:
+        print(f"confirm_withdraw xatoligi: {e}")
+        await callback.answer("❌ Xatolik yuz berdi")
+
+@dp.callback_query(F.data.startswith("reject_withdraw_"))
+async def reject_withdraw(callback: types.CallbackQuery):
+    """Stars chiqarib olishni rad etish"""
+    try:
+        if callback.from_user.id != ADMIN_ID:
+            await callback.answer("❌ Sizda ruxsat yo'q!")
+            return
+        
+        # Payload ni parse qilish: reject_withdraw_user_id_amount
+        parts = callback.data.split("_")
+        user_id = int(parts[2])
+        amount = int(parts[3])
+        
+        # Foydalanuvchiga xabar
+        await bot.send_message(user_id, f"❌ Stars chiqarib olish rad etildi.\n\n💎 Miqdor: {amount} Stars\n📢 Sabab: Admin tomonidan rad etildi.")
+        
+        # Admin xabarini yangilash
+        await callback.message.edit_text(
+            f"❌ Stars chiqarib olish rad etildi!\n\n👤 Foydalanuvchi: {user_id}\n💎 Miqdor: {amount} Stars"
+        )
+        
+        await callback.answer("❌ Rad etildi!")
+        
+    except Exception as e:
+        print(f"reject_withdraw xatoligi: {e}")
+        await callback.answer("❌ Xatolik yuz berdi")
+
+# === TELEGRAM STARS PAYMENT HANDLERS ===
+
+# === TELEGRAM STARS PAYMENT HANDLERS ===
+@dp.pre_checkout_query()
+async def process_pre_checkout_query(pre_checkout: PreCheckoutQuery):
+    """Pre-checkout tekshirish"""
+    try:
+        await bot.answer_pre_checkout_query(pre_checkout.id, ok=True)
+    except Exception as e:
+        print(f"pre_checkout_query xatoligi: {e}")
+        await bot.answer_pre_checkout_query(
+            pre_checkout.id,
+            ok=False,
+            error_message="To'lovni qayta ishlashda xatolik yuz berdi. Iltimos, keyinroq urinib ko'ring."
+        )
+
+@dp.message(F.successful_payment)
+async def process_successful_payment(message: types.Message):
+    """Muvaffaqiyatli to'lovni qayta ishlash"""
+    try:
+        payment_info = message.successful_payment
+        payload = payment_info.invoice_payload
+        
+        # Payload ni parse qilish: attempts_package_user_id
+        parts = payload.split("_")
+        if len(parts) != 3 or parts[0] != "attempts":
+            await message.answer("❌ To'lov ma'lumotlari noto'g'ri!")
+            return
+        
+        package = parts[1]
+        user_id = int(parts[2])
+        
+        packages = {
+            "25": {"attempts": 25, "price": 25},
+            "35": {"attempts": 35, "price": 35},
+            "55": {"attempts": 55, "price": 55},
+            "100": {"attempts": 100, "price": 100},
+            "200": {"attempts": 200, "price": 200},
+            "500": {"attempts": 500, "price": 500}
+        }
+        
+        if package not in packages:
+            await message.answer("❌ Noto'g'ri paket!")
+            return
+        
+        pkg = packages[package]
+        
+        # Bonus hisoblash
+        bonus = 0
+        if pkg["price"] >= 200:
+            bonus = int(pkg["attempts"] * 0.2)  # 20% bonus
+        elif pkg["price"] >= 100:
+            bonus = int(pkg["attempts"] * 0.1)  # 10% bonus
+        
+        total_attempts = pkg["attempts"] + bonus
+        
+        # Urinish qo'shish
+        add_attempts(user_id, total_attempts, f"telegram_stars_payment_{pkg['price']}")
+        
+        # VIP darajani yangilash
+        cursor.execute("UPDATE users SET total_spent = total_spent + ? WHERE user_id = ?", (pkg["price"], user_id))
+        conn.commit()
+        
+        # VIP darajani tekshirish va yangilash
+        cursor.execute("SELECT total_spent FROM users WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        if row:
+            total_spent = row[0]
+            new_vip_level = 1
+            for level, data in VIP_LEVELS.items():
+                if total_spent >= data["min_spent"]:
+                    new_vip_level = level
+            
+            cursor.execute("UPDATE users SET vip_level = ? WHERE user_id = ?", (new_vip_level, user_id))
+            conn.commit()
+        
+        # Log qilish
+        log_admin_action(ADMIN_ID, "telegram_stars_payment", user_id, 
+                        f"Payment: {pkg['price']} Stars, Added: {total_attempts} attempts")
+        
+        # Foydalanuvchiga xabar
+        success_msg = f"""
+✅ To'lov muvaffaqiyatli amalga oshirildi!
+
+🎰 Paket: {pkg['attempts']} urinish
+💰 To'lov: {pkg['price']} Stars
+🎁 Bonus: {bonus} urinish
+📊 Jami: {total_attempts} urinish qo'shildi
+💎 VIP daraja: {new_vip_level}
+
+🎮 Endi o'ynashni boshlashingiz mumkin!
+        """
+        
+        await message.answer(success_msg, reply_markup=create_main_keyboard())
+        
+    except Exception as e:
+        print(f"successful_payment xatoligi: {e}")
+        await message.answer("❌ To'lovni qayta ishlashda xatolik yuz berdi. Admin bilan bog'laning.")
+
+# === ADMIN CALLBACK HANDLAR ===
 @dp.callback_query(F.data == "admin_users")
 async def callback_admin_users(callback: types.CallbackQuery):
     """Admin foydalanuvchilar callback"""
@@ -996,6 +1450,64 @@ async def admin_give(message: types.Message):
     except Exception as e:
         print(f"admin_give xatoligi: {e}")
         await message.answer("❌ Foydalanish: /give <user_id> <soni>")
+
+@dp.message(Command("pay"))
+async def admin_pay(message: types.Message):
+    """Admin to'lovni tasdiqlash va urinish qo'shish"""
+    try:
+        if message.from_user.id != ADMIN_ID:
+            return
+        
+        parts = message.text.split()
+        if len(parts) != 3:
+            await message.answer("❌ Foydalanish: /pay <user_id> <stars_amount>")
+            return
+        
+        uid, stars_amount = int(parts[1]), int(parts[2])
+        
+        # Bonus hisoblash
+        bonus = 0
+        if stars_amount >= 100:
+            bonus = int(stars_amount * 0.2)  # 20% bonus
+        elif stars_amount >= 50:
+            bonus = int(stars_amount * 0.1)  # 10% bonus
+        
+        total_attempts = stars_amount + bonus
+        
+        # Urinish qo'shish
+        add_attempts(uid, total_attempts, f"payment_{stars_amount}_stars")
+        
+        # VIP darajani yangilash
+        cursor.execute("UPDATE users SET total_spent = total_spent + ? WHERE user_id = ?", (stars_amount, uid))
+        conn.commit()
+        
+        # VIP darajani tekshirish va yangilash
+        cursor.execute("SELECT total_spent FROM users WHERE user_id = ?", (uid,))
+        row = cursor.fetchone()
+        if row:
+            total_spent = row[0]
+            new_vip_level = 1
+            for level, data in VIP_LEVELS.items():
+                if total_spent >= data["min_spent"]:
+                    new_vip_level = level
+            
+            cursor.execute("UPDATE users SET vip_level = ? WHERE user_id = ?", (new_vip_level, uid))
+            conn.commit()
+        
+        log_admin_action(ADMIN_ID, "payment_confirmed", uid, f"Payment: {stars_amount} Stars, Added: {total_attempts} attempts")
+        
+        await message.answer(f"""
+✅ To'lov tasdiqlandi!
+
+👤 Foydalanuvchi: {uid}
+💰 To'lov: {stars_amount} Stars
+🎁 Bonus: {bonus} urinish
+📊 Jami: {total_attempts} urinish qo'shildi
+💎 VIP daraja: {new_vip_level}
+        """)
+    except Exception as e:
+        print(f"admin_pay xatoligi: {e}")
+        await message.answer("❌ Foydalanish: /pay <user_id> <stars_amount>")
 
 @dp.message(Command("stats_admin"))
 async def admin_stats(message: types.Message):
